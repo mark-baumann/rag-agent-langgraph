@@ -97,6 +97,9 @@ class EvidenceVerifier:
     def _extract_claims(self, text: str) -> List[str]:
         """Extrahiere faktische Behauptungen aus Text (Satzebene)."""
         sentences = re.split(r'(?<=[.!?])\s+', text)
+        if len(sentences) <= 1:
+            # Fallback: Split an Satzzeichen ohne Leerzeichen-Anforderung
+            sentences = re.split(r'(?<=[.!?])', text)
         return [s.strip() for s in sentences if len(s.strip()) > 20]
 
     def _claim_in_content(self, claim: str, content: str) -> bool:
