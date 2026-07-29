@@ -100,7 +100,7 @@ class EvidenceVerifier:
         if len(sentences) <= 1:
             # Fallback: Split an Satzzeichen ohne Leerzeichen-Anforderung
             sentences = re.split(r'(?<=[.!?])', text)
-        return [s.strip() for s in sentences if len(s.strip()) > 20]
+        return [s.strip() for s in sentences if len(s.strip()) > 5]
 
     def _claim_in_content(self, claim: str, content: str) -> bool:
         """Prüft, ob eine Behauptung im Quelltext vorkommt (einfache Überlappung)."""
