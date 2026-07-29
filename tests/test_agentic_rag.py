@@ -86,7 +86,7 @@ class TestEvidenceVerifier:
 
     def test_claim_extraction(self):
         v = EvidenceVerifier()
-        claims = v._extract_claims("Dies ist der erste Satz mit genug Länge. Dies ist der zweite Satz mit genug Länge! Dies ist der dritte Satz mit genug Länge?")
+        claims = v._extract_claims("Erster Satz. Zweiter Satz! Dritter Satz?")
         assert len(claims) == 3
 
 
