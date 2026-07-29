@@ -43,7 +43,7 @@ class SimpleVectorStore:
         self.documents: List[str] = []
         self.embeddings: List[np.ndarray] = []
 
-    def add(self, documents: List[str], embeddings: List[np.ndarray]):
+    def add(self, documents: List[str], embeddings: List[np.ndarray]) -> None:
         self.documents.extend(documents)
         self.embeddings.extend(embeddings)
 
@@ -74,7 +74,7 @@ class SimpleEmbedder:
         self.vocab = {}
         self.idf = {}
 
-    def fit(self, documents: List[str]):
+    def fit(self, documents: List[str]) -> None:
         """Baut Vokabular und IDF-Werte auf."""
         # Tokenisierung
         tokenized = [doc.lower().split() for doc in documents]
