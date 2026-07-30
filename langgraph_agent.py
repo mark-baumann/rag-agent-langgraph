@@ -16,15 +16,15 @@ Architektur:
 Verwendet LangGraph für den State-Flow.
 """
 
-from typing import TypedDict, List, Annotated, Literal
-import operator
 import math
+import operator
+from typing import Annotated, Literal, TypedDict
 
 import numpy as np
 
 # LangGraph — falls nicht installiert, wird in der Demo darauf hingewiesen
 try:
-    from langgraph.graph import StateGraph, END
+    from langgraph.graph import END, StateGraph
     HAS_LANGGRAPH = True
 except ImportError:
     HAS_LANGGRAPH = False
@@ -39,13 +39,13 @@ except ImportError:
 class AgentState(TypedDict):
     """State für den LangGraph RAG Agenten."""
     query: str
-    retrieved_docs: Annotated[List[str], operator.add]
-    graded_docs: List[str]
+    retrieved_docs: Annotated[list[str], operator.add]
+    graded_docs: list[str]
     answer: str
     needs_rewrite: bool
     hallucination_score: float
     iteration: int
-    tool_calls: List[str]
+    tool_calls: list[str]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -87,14 +87,14 @@ class SimpleVectorStore:
     """Minimaler Vector Store mit Cosine-Similarity."""
 
     def __init__(self):
-        self.documents: List[str] = []
-        self.embeddings: List[np.ndarray] = []
+        self.documents: list[str] = []
+        self.embeddings: list[np.ndarray] = []
 
-    def add(self, documents: List[str], embeddings: List[np.ndarray]) -> None:
+    def add(self, documents: list[str], embeddings: list[np.ndarray]) -> None:
         self.documents.extend(documents)
         self.embeddings.extend(embeddings)
 
-    def search(self, query_embedding: np.ndarray, k: int = 3) -> List[str]:
+    def search(self, query_embedding: np.ndarray, k: int = 3) -> list[str]:
         if not self.embeddings:
             return []
         query_norm = query_embedding / (np.linalg.norm(query_embedding) + 1e-8)
@@ -113,16 +113,16 @@ class SimpleEmbedder:
         self.vocab = {}
         self.idf = {}
 
-    def fit(self, documents: List[str]) -> None:
+    def fit(self, documents: list[str]) -> None:
         tokenized = [doc.lower().split() for doc in documents]
         all_tokens = set()
         for tokens in tokenized:
             all_tokens.update(tokens)
         self.vocab = {token: i for i, token in enumerate(sorted(all_tokens))}
-        N = len(documents)
+        n_docs = len(documents)
         for token in self.vocab:
             df = sum(1 for tokens in tokenized if token in tokens)
-            self.idf[token] = np.log((N + 1) / (df + 1)) + 1
+            self.idf[token] = np.log((n_docs + 1) / (df + 1)) + 1
 
     def embed(self, text: str) -> np.ndarray:
         tokens = text.lower().split()
@@ -148,7 +148,7 @@ class RAGAgent:
                                     └── rewrite ───┘ (bei Halluzination)
     """
 
-    def __init__(self, documents: List[str], max_iterations: int = 3):
+    def __init__(self, documents: list[str], max_iterations: int = 3):
         self.store = SimpleVectorStore()
         self.embedder = SimpleEmbedder()
         self.max_iterations = max_iterations
@@ -379,5 +379,5 @@ if __name__ == "__main__":
 
     print(f"\n{'─' * 60}")
     print("✅ LangGraph RAG-Demo abgeschlossen!")
-    print(f"   Workflow: retrieve → grade_docs → generate → check_hallucination")
-    print(f"   Conditional Edges: should_generate, should_rewrite")
+    print("   Workflow: retrieve → grade_docs → generate → check_hallucination")
+    print("   Conditional Edges: should_generate, should_rewrite")

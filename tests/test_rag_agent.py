@@ -10,13 +10,13 @@ Testet:
 
 import numpy as np
 import pytest
-from rag_agent import (
-    RAGState,
-    SimpleVectorStore,
-    SimpleEmbedder,
-    RAGPipeline,
-)
 
+from rag_agent import (
+    RAGPipeline,
+    RAGState,
+    SimpleEmbedder,
+    SimpleVectorStore,
+)
 
 # ═══════════════════════════════════════════════════════════════
 # RAGState Tests
