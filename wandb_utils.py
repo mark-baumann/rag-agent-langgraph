@@ -12,8 +12,6 @@ Verwendung:
 """
 
 import os
-import time
-from typing import Optional, List
 
 try:
     import wandb
@@ -36,11 +34,11 @@ class WandBTracker:
     def __init__(
         self,
         project: str = "rag-agent",
-        config: Optional[dict] = None,
-        tags: Optional[list] = None,
-        group: Optional[str] = None,
+        config: dict | None = None,
+        tags: list | None = None,
+        group: str | None = None,
         job_type: str = "eval",
-        notes: Optional[str] = None,
+        notes: str | None = None,
         offline: bool = False,
     ):
         self.project = project
@@ -75,7 +73,7 @@ class WandBTracker:
             except Exception as e:
                 print(f"⚠️  W&B-Init fehlgeschlagen: {e}")
 
-    def log(self, metrics: dict, step: Optional[int] = None):
+    def log(self, metrics: dict, step: int | None = None):
         """Loggt Metriken zu W&B."""
         if self.run:
             self.run.log(metrics, step=step)
@@ -83,7 +81,7 @@ class WandBTracker:
     def log_retrieval(
         self,
         query: str,
-        retrieved_docs: List[str],
+        retrieved_docs: list[str],
         k: int = 3,
         retrieval_time_ms: float = 0.0,
     ):

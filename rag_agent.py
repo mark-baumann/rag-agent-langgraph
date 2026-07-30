@@ -11,10 +11,10 @@ Architektur:
 Verwendet LangGraph für den State-Flow.
 """
 
-from typing import TypedDict, List, Annotated
 import operator
-import numpy as np
+from typing import Annotated, TypedDict
 
+import numpy as np
 
 # ═══════════════════════════════════════════════════════════════
 # State-Definition
@@ -22,7 +22,7 @@ import numpy as np
 
 class RAGState(TypedDict):
     query: str
-    retrieved_docs: Annotated[List[str], operator.add]
+    retrieved_docs: Annotated[list[str], operator.add]
     context: str
     answer: str
     needs_rewrite: bool
@@ -40,14 +40,14 @@ class SimpleVectorStore:
     """
 
     def __init__(self):
-        self.documents: List[str] = []
-        self.embeddings: List[np.ndarray] = []
+        self.documents: list[str] = []
+        self.embeddings: list[np.ndarray] = []
 
-    def add(self, documents: List[str], embeddings: List[np.ndarray]) -> None:
+    def add(self, documents: list[str], embeddings: list[np.ndarray]) -> None:
         self.documents.extend(documents)
         self.embeddings.extend(embeddings)
 
-    def search(self, query_embedding: np.ndarray, k: int = 3) -> List[str]:
+    def search(self, query_embedding: np.ndarray, k: int = 3) -> list[str]:
         """Cosine-Similarity-Suche."""
         if not self.embeddings:
             return []
@@ -74,7 +74,7 @@ class SimpleEmbedder:
         self.vocab = {}
         self.idf = {}
 
-    def fit(self, documents: List[str]) -> None:
+    def fit(self, documents: list[str]) -> None:
         """Baut Vokabular und IDF-Werte auf."""
         # Tokenisierung
         tokenized = [doc.lower().split() for doc in documents]
@@ -84,10 +84,10 @@ class SimpleEmbedder:
             all_tokens.update(tokens)
         self.vocab = {token: i for i, token in enumerate(sorted(all_tokens))}
         # IDF
-        N = len(documents)
+        n_docs = len(documents)
         for token in self.vocab:
             df = sum(1 for tokens in tokenized if token in tokens)
-            self.idf[token] = np.log((N + 1) / (df + 1)) + 1
+            self.idf[token] = np.log((n_docs + 1) / (df + 1)) + 1
 
     def embed(self, text: str) -> np.ndarray:
         """Erzeugt TF-IDF-Embedding."""
@@ -116,7 +116,7 @@ class RAGPipeline:
         workflow.add_conditional_edges(...)
     """
 
-    def __init__(self, documents: List[str]):
+    def __init__(self, documents: list[str]):
         self.store = SimpleVectorStore()
         self.embedder = SimpleEmbedder()
 
@@ -125,12 +125,12 @@ class RAGPipeline:
         embeddings = [self.embedder.embed(doc) for doc in documents]
         self.store.add(documents, embeddings)
 
-    def retrieve(self, query: str, k: int = 3) -> List[str]:
+    def retrieve(self, query: str, k: int = 3) -> list[str]:
         """Retrieval-Schritt: Query → Embedding → Search."""
         query_emb = self.embedder.embed(query)
         return self.store.search(query_emb, k=k)
 
-    def generate(self, query: str, docs: List[str]) -> str:
+    def generate(self, query: str, docs: list[str]) -> str:
         """
         Generation-Schritt (vereinfacht — ohne LLM).
         In Produktion: OpenAI, Claude, lokales LLM.

@@ -1,14 +1,13 @@
 """
 Tests für Agentic RAG Modul.
 """
-import pytest
 import numpy as np
+
 from agentic_rag import (
     AgenticRAG,
-    AgenticRAGState,
-    RetrievalStrategy,
     EvidenceVerifier,
     QueryDecomposer,
+    RetrievalStrategy,
 )
 
 
@@ -33,7 +32,7 @@ class MockVectorStore:
 
 class MockLLM:
     def generate(self, prompt: str) -> str:
-        return f"Generierte Antwort basierend auf Kontext."
+        return "Generierte Antwort basierend auf Kontext."
 
 
 class TestQueryDecomposer:

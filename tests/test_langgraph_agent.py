@@ -9,18 +9,16 @@ Testet:
 - AgentState: TypedDict-Struktur
 """
 
-import numpy as np
 import pytest
 
 from langgraph_agent import (
+    HAS_LANGGRAPH,
+    TOOLS,
     AgentState,
     RAGAgent,
     calculator,
     web_search_stub,
-    TOOLS,
-    HAS_LANGGRAPH,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # Fixtures

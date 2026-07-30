@@ -4,12 +4,11 @@ Streamlit-App: RAG Agent LangGraph
 PDF hochladen → embedden → Fragen stellen, Retrieval visualisieren.
 """
 
-import streamlit as st
-import numpy as np
-import re
-import os
 import hashlib
-from typing import List, Dict, Tuple
+import re
+
+import numpy as np
+import streamlit as st
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -57,7 +56,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     return text
 
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
     """Teilt Text in überlappende Chunks."""
     words = text.split()
     chunks = []
@@ -94,7 +93,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
 
-def retrieve(query: str, chunks: List[str], embeddings: np.ndarray, top_k: int = 5) -> List[Tuple[int, float, str]]:
+def retrieve(query: str, chunks: list[str], embeddings: np.ndarray, top_k: int = 5) -> list[tuple[int, float, str]]:
     """Retrieval: Findet die top-k ähnlichsten Chunks."""
     query_emb = simple_embed(query, dim=embeddings.shape[1])
     similarities = []
