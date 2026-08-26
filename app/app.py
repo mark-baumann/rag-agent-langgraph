@@ -1,14 +1,23 @@
 """
 Streamlit-App: RAG Agent LangGraph
 ==================================
-PDF hochladen → embedden → Fragen stellen, Retrieval visualisieren.
+PDF hochladen → embedden → dauerhaft in Vector-DB speichern → Fragen stellen,
+Retrieval visualisieren. Gespeicherte Dokumente überleben App-Neustarts und
+Redeploys (Vector-DB liegt auf einem persistenten Volume).
 """
 
-import hashlib
 import re
+import sys
+from pathlib import Path
 
 import numpy as np
 import streamlit as st
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from vector_store import HashEmbedder, PersistentVectorStore  # noqa: E402
+
+EMBED_DIM = 256
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -18,15 +27,22 @@ st.set_page_config(
 )
 
 st.title("🔍 RAG Agent — LangGraph")
-st.markdown("PDF hochladen · Embedding · Fragen stellen · Retrieval visualisieren")
+st.markdown("PDF hochladen · Embedding · dauerhafte Speicherung · Fragen stellen · Retrieval visualisieren")
 
-# ── Session State ────────────────────────────────────────────
-if "documents" not in st.session_state:
-    st.session_state.documents = []  # List of {"text": str, "source": str, "chunk_id": int}
-if "embeddings" not in st.session_state:
-    st.session_state.embeddings = None  # numpy array
-if "chunks" not in st.session_state:
-    st.session_state.chunks = []
+
+@st.cache_resource
+def get_store() -> PersistentVectorStore:
+    """Öffnet die persistente Vector-DB (ChromaDB, einmal pro Prozess)."""
+    return PersistentVectorStore()
+
+
+@st.cache_resource
+def get_embedder() -> HashEmbedder:
+    return HashEmbedder(dim=EMBED_DIM)
+
+
+store = get_store()
+embedder = get_embedder()
 
 # ═══════════════════════════════════════════════════════════════
 # Hilfsfunktionen
@@ -69,41 +85,6 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str
     return chunks
 
 
-def simple_embed(text: str, dim: int = 128) -> np.ndarray:
-    """Erzeugt ein einfaches Embedding via Hashing + TF-IDF-ähnlicher Gewichtung."""
-    words = re.findall(r'\b\w+\b', text.lower())
-    if not words:
-        return np.zeros(dim)
-
-    vec = np.zeros(dim)
-    for i, word in enumerate(words):
-        h = int(hashlib.md5(word.encode(), usedforsecurity=False).hexdigest(), 16)
-        idx = h % dim
-        # TF-IDF-ähnlich: häufige Wörter bekommen weniger Gewicht
-        vec[idx] += 1.0 / (1.0 + i * 0.01)
-    # Normalisieren
-    norm = np.linalg.norm(vec)
-    if norm > 0:
-        vec /= norm
-    return vec
-
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Berechnet Kosinus-Ähnlichkeit."""
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
-
-
-def retrieve(query: str, chunks: list[str], embeddings: np.ndarray, top_k: int = 5) -> list[tuple[int, float, str]]:
-    """Retrieval: Findet die top-k ähnlichsten Chunks."""
-    query_emb = simple_embed(query, dim=embeddings.shape[1])
-    similarities = []
-    for i, emb in enumerate(embeddings):
-        sim = cosine_similarity(query_emb, emb)
-        similarities.append((i, sim, chunks[i]))
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    return similarities[:top_k]
-
-
 # ═══════════════════════════════════════════════════════════════
 # UI
 # ═══════════════════════════════════════════════════════════════
@@ -119,24 +100,22 @@ with col1:
 
         chunk_size = st.slider("Chunk-Größe (Wörter)", 100, 1000, 500, 50)
         overlap = st.slider("Überlappung (Wörter)", 0, 300, 100, 25)
-        embed_dim = st.selectbox("Embedding-Dimension", [64, 128, 256], index=1)
 
-        if st.button("🔨 PDF verarbeiten & embedden", type="primary"):
+        if st.button("💾 PDF verarbeiten & dauerhaft speichern", type="primary"):
             with st.spinner("📄 Extrahiere Text aus PDF..."):
                 text = extract_text_from_pdf(file_bytes)
-                st.session_state.full_text = text
 
             with st.spinner("✂️ Erstelle Chunks..."):
                 chunks = chunk_text(text, chunk_size, overlap)
-                st.session_state.chunks = chunks
 
-            with st.spinner("🧮 Berechne Embeddings..."):
-                embeddings = np.array([simple_embed(c, embed_dim) for c in chunks])
-                st.session_state.embeddings = embeddings
+            with st.spinner("🧮 Berechne Embeddings & speichere in Vector-DB..."):
+                embeddings = [embedder.embed(c) for c in chunks]
+                metadatas = [{"source": uploaded_file.name} for _ in chunks]
+                store.add(chunks, embeddings, metadatas=metadatas)
 
-            st.success(f"✅ {len(chunks)} Chunks erstellt & embedded!")
-            st.metric("Chunks", len(chunks))
-            st.metric("Embedding-Dim", embed_dim)
+            st.success(f"✅ {len(chunks)} Chunks dauerhaft in der Vector-DB gespeichert!")
+            st.metric("Neue Chunks", len(chunks))
+            st.metric("Chunks insgesamt (Vector-DB)", store.count())
             st.metric("Textlänge", f"{len(text):,} Zeichen")
 
             # Zeige Text-Vorschau
@@ -145,23 +124,25 @@ with col1:
 
 with col2:
     st.subheader("❓ Frage stellen")
+    st.caption("Durchsucht alle jemals hochgeladenen PDFs — auch nach einem Neustart der App.")
 
-    if st.session_state.embeddings is not None and len(st.session_state.chunks) > 0:
-        query = st.text_input("Deine Frage", placeholder="Worum geht es im Dokument?")
+    if store.count() > 0:
+        query = st.text_input("Deine Frage", placeholder="Worum geht es in den Dokumenten?")
 
         top_k = st.slider("Anzahl Ergebnisse (Top-K)", 1, 10, 5)
 
         if st.button("🔍 Suchen", type="primary") and query:
             with st.spinner("🔍 Retrieval läuft..."):
-                results = retrieve(query, st.session_state.chunks, st.session_state.embeddings, top_k)
+                query_emb = embedder.embed(query)
+                results = store.search_with_scores(query_emb, k=top_k)
 
             st.divider()
-            st.subheader(f"📊 Top-{top_k} Ergebnisse")
+            st.subheader(f"📊 Top-{len(results)} Ergebnisse")
 
             # ── Visualisierung: Ähnlichkeits-Balken ──────────
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots(figsize=(8, 3))
-            chunk_labels = [f"Chunk {r[0]}" for r in results]
+            chunk_labels = [f"Chunk {i}" for i in range(len(results))]
             sim_values = [r[1] for r in results]
             colors = plt.cm.Blues(np.array(sim_values) / max(sim_values) if max(sim_values) > 0 else 1)
             bars = ax.barh(chunk_labels[::-1], sim_values[::-1], color=colors[::-1])
@@ -172,8 +153,9 @@ with col2:
             st.pyplot(fig)
 
             # ── Ergebnisse im Detail ─────────────────────────
-            for i, (chunk_id, sim, text) in enumerate(results):
-                with st.expander(f"📌 Chunk {chunk_id} — Ähnlichkeit: {sim:.4f}", expanded=(i == 0)):
+            for i, (text, sim, meta) in enumerate(results):
+                source = meta.get("source", "unbekannt")
+                with st.expander(f"📌 Chunk {i} · {source} — Ähnlichkeit: {sim:.4f}", expanded=(i == 0)):
                     # Highlight relevante Wörter
                     query_words = set(re.findall(r'\b\w+\b', query.lower()))
                     highlighted = text
@@ -196,10 +178,10 @@ with col2:
             with col_b:
                 st.metric("Max. Ähnlichkeit", f"{max(sim_values):.4f}")
             with col_c:
-                st.metric("Chunks > 0.1", f"{sum(1 for s in sim_values if s > 0.1)}/{top_k}")
+                st.metric("Chunks > 0.1", f"{sum(1 for s in sim_values if s > 0.1)}/{len(results)}")
 
     else:
-        st.info("👈 Lade zuerst eine PDF-Datei hoch und klicke auf 'PDF verarbeiten & embedden'.")
+        st.info("👈 Lade zuerst eine PDF-Datei hoch und klicke auf 'PDF verarbeiten & dauerhaft speichern'.")
 
 # ═══════════════════════════════════════════════════════════════
 # Sidebar: Info
@@ -211,8 +193,9 @@ st.sidebar.markdown("""
 1. **PDF-Upload** & Text-Extraktion
 2. **Chunking** mit überlappenden Fenstern
 3. **Embedding** via Hash-basiertem Vektor
-4. **Retrieval** mit Kosinus-Ähnlichkeit
-5. **Visualisierung** der Ergebnisse
+4. **Dauerhafte Speicherung** in einer Vector-DB (ChromaDB)
+5. **Retrieval** mit Kosinus-Ähnlichkeit
+6. **Visualisierung** der Ergebnisse
 
 **Erweiterungen (in Produktion):**
 - Echte Embedding-Modelle (sentence-transformers)
@@ -221,9 +204,14 @@ st.sidebar.markdown("""
 - Knowledge Graph Integration
 """)
 
-st.sidebar.metric("Geladene Chunks", len(st.session_state.chunks))
-if st.session_state.embeddings is not None:
-    st.sidebar.metric("Embedding-Shape", str(st.session_state.embeddings.shape))
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 Vector-DB")
+st.sidebar.metric("Dauerhaft gespeicherte Chunks", store.count())
+
+if store.count() > 0 and st.sidebar.button("🗑️ Alle gespeicherten Dokumente löschen"):
+    store.clear()
+    st.sidebar.success("Vector-DB geleert.")
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.caption("RAG Agent · Streamlit App")
