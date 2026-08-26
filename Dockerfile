@@ -40,7 +40,12 @@ RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
 # Port (pro App anpassen: 8501-8519)
+# ARG allein reicht nicht: CMD/HEALTHCHECK laufen zur Container-Laufzeit,
+# nicht beim Build, und lesen $PORT vom Shell-Environment der Shell-Form —
+# ARG-Werte sind zu dem Zeitpunkt längst weg. Als ENV re-exportieren, damit
+# der Wert im laufenden Container tatsächlich gesetzt ist.
 ARG PORT=8512
+ENV PORT=$PORT
 EXPOSE $PORT
 
 # Healthcheck
