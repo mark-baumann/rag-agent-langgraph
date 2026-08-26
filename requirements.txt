@@ -79,7 +79,7 @@ langgraph-sdk==0.4.2
 langsmith==0.10.12
 lark-oapi==1.7.1
 litellm==1.94.0
-longbridge==4.4.1
+longbridge==4.4.3
 lxml==6.1.1
 lxml-html-clean==0.4.5
 markdown-it-py==4.2.0

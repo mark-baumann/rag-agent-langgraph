@@ -1,21 +1,35 @@
 # ═══════════════════════════════════════════════════════════════
-# Dockerfile — Standard-Template für alle Streamlit-Apps
+# Dockerfile — Multi-Stage-Build für RAG Agent (rag-agent-langgraph)
 # ═══════════════════════════════════════════════════════════════
-# Kopiere diese Datei in jedes App-Repo und passe PORT an.
+# Abweichung vom Standard-Template (Dockerfile.template): git/perl
+# werden nur im Builder installiert (für die eine git+https-Pip-
+# Abhängigkeit), das finale Image enthält sie nicht mehr. Grund:
+# das Perl-Paket bringt tausende kleiner Dateien mit, was auf dem
+# Pi wiederholt zu "failed to Lchown ... no such file or directory"
+# beim Layer-Extract in containerd/overlayfs führte.
 
+# ── Builder ──────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Final Image ──────────────────────────────────────────────────
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# System-Abhängigkeiten
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Python-Abhängigkeiten
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # App-Code
 COPY . .
@@ -26,7 +40,12 @@ RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
 # Port (pro App anpassen: 8501-8519)
+# ARG allein reicht nicht: CMD/HEALTHCHECK laufen zur Container-Laufzeit,
+# nicht beim Build, und lesen $PORT vom Shell-Environment der Shell-Form —
+# ARG-Werte sind zu dem Zeitpunkt längst weg. Als ENV re-exportieren, damit
+# der Wert im laufenden Container tatsächlich gesetzt ist.
 ARG PORT=8512
+ENV PORT=$PORT
 EXPOSE $PORT
 
 # Healthcheck
