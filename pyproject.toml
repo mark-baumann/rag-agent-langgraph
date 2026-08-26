@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "langgraph>=1.0",
+    "chromadb>=1.0",
 ]
 
 [project.optional-dependencies]

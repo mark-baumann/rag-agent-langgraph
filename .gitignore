@@ -40,3 +40,4 @@ Thumbs.db
 wandb_runs/
 .venv
 *.pyc
+data/

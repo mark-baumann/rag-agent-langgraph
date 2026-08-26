@@ -20,6 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # App-Code
 COPY . .
 
+# Persistentes Volume für die Vector-DB (siehe infrastruktur-deployment: volumes-Mount)
+ENV VECTOR_DB_PATH=/app/data/chroma
+RUN mkdir -p /app/data
+VOLUME ["/app/data"]
+
 # Port (pro App anpassen: 8501-8519)
 ARG PORT=8512
 EXPOSE $PORT
