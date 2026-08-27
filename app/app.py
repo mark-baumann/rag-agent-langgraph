@@ -6,6 +6,7 @@ Retrieval visualisieren. Gespeicherte Dokumente überleben App-Neustarts und
 Redeploys (Vector-DB liegt auf einem persistenten Volume).
 """
 
+import base64
 import re
 import sys
 from pathlib import Path
@@ -15,9 +16,15 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from vector_store import HashEmbedder, PersistentVectorStore  # noqa: E402
+from vector_store import DEFAULT_PERSIST_DIR, HashEmbedder, PersistentVectorStore  # noqa: E402
 
 EMBED_DIM = 256
+
+# Original-PDFs werden neben der Vector-DB auf demselben persistenten
+# Volume abgelegt, damit sie im Browser angezeigt oder heruntergeladen
+# werden können (die Vector-DB enthält nur Text-Chunks, keine Rohdaten).
+DOCS_DIR = Path(DEFAULT_PERSIST_DIR).parent / "documents"
+DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -113,6 +120,11 @@ with col1:
                 metadatas = [{"source": uploaded_file.name} for _ in chunks]
                 store.add(chunks, embeddings, metadatas=metadatas)
 
+            # Original-PDF ebenfalls dauerhaft ablegen, damit sie später
+            # angezeigt oder heruntergeladen werden kann.
+            safe_name = Path(uploaded_file.name).name
+            (DOCS_DIR / safe_name).write_bytes(file_bytes)
+
             st.success(f"✅ {len(chunks)} Chunks dauerhaft in der Vector-DB gespeichert!")
             st.metric("Neue Chunks", len(chunks))
             st.metric("Chunks insgesamt (Vector-DB)", store.count())
@@ -184,6 +196,44 @@ with col2:
         st.info("👈 Lade zuerst eine PDF-Datei hoch und klicke auf 'PDF verarbeiten & dauerhaft speichern'.")
 
 # ═══════════════════════════════════════════════════════════════
+# Gespeicherte Dokumente: anzeigen & herunterladen
+# ═══════════════════════════════════════════════════════════════
+
+st.divider()
+st.subheader("📁 Gespeicherte Dokumente")
+
+doc_paths = sorted(DOCS_DIR.glob("*.pdf"), key=lambda p: p.name.lower())
+
+if doc_paths:
+    for doc_path in doc_paths:
+        col_name, col_view, col_download = st.columns([4, 1, 1])
+        view_key = f"show_preview::{doc_path.name}"
+
+        with col_name:
+            st.write(f"📄 {doc_path.name}")
+        with col_view:
+            if st.button("👁️ Anzeigen", key=f"view_btn::{doc_path.name}"):
+                st.session_state[view_key] = not st.session_state.get(view_key, False)
+        with col_download:
+            st.download_button(
+                "📥 Download",
+                data=doc_path.read_bytes(),
+                file_name=doc_path.name,
+                mime="application/pdf",
+                key=f"download_btn::{doc_path.name}",
+            )
+
+        if st.session_state.get(view_key, False):
+            b64_pdf = base64.b64encode(doc_path.read_bytes()).decode()
+            st.markdown(
+                f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
+                f'width="100%" height="600" style="border:none;"></iframe>',
+                unsafe_allow_html=True,
+            )
+else:
+    st.caption("Noch keine Dokumente gespeichert.")
+
+# ═══════════════════════════════════════════════════════════════
 # Sidebar: Info
 # ═══════════════════════════════════════════════════════════════
 
@@ -210,6 +260,8 @@ st.sidebar.metric("Dauerhaft gespeicherte Chunks", store.count())
 
 if store.count() > 0 and st.sidebar.button("🗑️ Alle gespeicherten Dokumente löschen"):
     store.clear()
+    for doc_path in DOCS_DIR.glob("*.pdf"):
+        doc_path.unlink()
     st.sidebar.success("Vector-DB geleert.")
     st.rerun()
 
