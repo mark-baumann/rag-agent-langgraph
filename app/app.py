@@ -56,27 +56,35 @@ embedder = get_embedder()
 # ═══════════════════════════════════════════════════════════════
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extrahiert Text aus PDF-Bytes (einfache Methode)."""
-    text = ""
+    """Extrahiert Text aus PDF-Bytes.
+
+    Versucht der Reihe nach PyMuPDF (fitz) und pypdf. Gibt den extrahierten
+    Text zurück oder einen leeren String, wenn nichts extrahiert werden konnte
+    (z. B. gescannte PDFs ohne Text-Layer).
+    """
+    # 1) PyMuPDF (fitz) — beste Extraktion, inkl. Layout
     try:
-        # Versuche PyMuPDF
         import fitz
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        for page in doc:
-            text += page.get_text()
+        text = "".join(page.get_text() for page in doc)
         doc.close()
-    except ImportError:
-        # Fallback: einfache Text-Extraktion aus PDF-Rohdaten
-        content = file_bytes.decode("latin-1", errors="ignore")
-        # Suche nach Text zwischen stream/endstream
-        text_parts = re.findall(r'BT\s*(.*?)\s*ET', content, re.DOTALL)
-        for part in text_parts:
-            # Extrahiere Text aus Tj/TJ-Operatoren
-            tj_texts = re.findall(r'\((.*?)\)\s*Tj', part)
-            text += " ".join(tj_texts) + "\n"
-        if not text.strip():
-            text = "⚠️ Kein Text extrahierbar. Bitte PyMuPDF installieren: pip install pymupdf"
-    return text
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    # 2) pypdf — reiner Text-Layer, ohne Layout
+    try:
+        from pypdf import PdfReader
+        import io
+        reader = PdfReader(io.BytesIO(file_bytes))
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    return ""
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
@@ -112,27 +120,34 @@ with col1:
             with st.spinner("📄 Extrahiere Text aus PDF..."):
                 text = extract_text_from_pdf(file_bytes)
 
-            with st.spinner("✂️ Erstelle Chunks..."):
-                chunks = chunk_text(text, chunk_size, overlap)
+            if not text.strip():
+                st.error(
+                    "⚠️ Kein Text aus dieser PDF extrahierbar. "
+                    "Das Dokument ist vermutlich ein Scan ohne Text-Layer "
+                    "(Bild-PDF). Für solche Dateien ist OCR nötig."
+                )
+            else:
+                with st.spinner("✂️ Erstelle Chunks..."):
+                    chunks = chunk_text(text, chunk_size, overlap)
 
-            with st.spinner("🧮 Berechne Embeddings & speichere in Vector-DB..."):
-                embeddings = [embedder.embed(c) for c in chunks]
-                metadatas = [{"source": uploaded_file.name} for _ in chunks]
-                store.add(chunks, embeddings, metadatas=metadatas)
+                with st.spinner("🧮 Berechne Embeddings & speichere in Vector-DB..."):
+                    embeddings = [embedder.embed(c) for c in chunks]
+                    metadatas = [{"source": uploaded_file.name} for _ in chunks]
+                    store.add(chunks, embeddings, metadatas=metadatas)
 
-            # Original-PDF ebenfalls dauerhaft ablegen, damit sie später
-            # angezeigt oder heruntergeladen werden kann.
-            safe_name = Path(uploaded_file.name).name
-            (DOCS_DIR / safe_name).write_bytes(file_bytes)
+                # Original-PDF ebenfalls dauerhaft ablegen, damit sie später
+                # angezeigt oder heruntergeladen werden kann.
+                safe_name = Path(uploaded_file.name).name
+                (DOCS_DIR / safe_name).write_bytes(file_bytes)
 
-            st.success(f"✅ {len(chunks)} Chunks dauerhaft in der Vector-DB gespeichert!")
-            st.metric("Neue Chunks", len(chunks))
-            st.metric("Chunks insgesamt (Vector-DB)", store.count())
-            st.metric("Textlänge", f"{len(text):,} Zeichen")
+                st.success(f"✅ {len(chunks)} Chunks dauerhaft in der Vector-DB gespeichert!")
+                st.metric("Neue Chunks", len(chunks))
+                st.metric("Chunks insgesamt (Vector-DB)", store.count())
+                st.metric("Textlänge", f"{len(text):,} Zeichen")
 
-            # Zeige Text-Vorschau
-            with st.expander("📝 Text-Vorschau (erste 1000 Zeichen)"):
-                st.text(text[:1000])
+                # Zeige Text-Vorschau
+                with st.expander("📝 Text-Vorschau (erste 1000 Zeichen)"):
+                    st.text(text[:1000])
 
 with col2:
     st.subheader("❓ Frage stellen")
@@ -232,6 +247,23 @@ if doc_paths:
             )
 else:
     st.caption("Noch keine Dokumente gespeichert.")
+
+# ═══════════════════════════════════════════════════════════════
+# Gespeicherte Chunks: anzeigen
+# ═══════════════════════════════════════════════════════════════
+
+st.divider()
+st.subheader("🧩 Gespeicherte Chunks")
+
+chunks = store.list_chunks()
+if chunks:
+    st.caption(f"{len(chunks)} Chunks in der Vector-DB.")
+    for i, (chunk_text, meta) in enumerate(chunks):
+        source = (meta or {}).get("source", "unbekannt")
+        with st.expander(f"Chunk {i} · {source} · {len(chunk_text)} Zeichen"):
+            st.text(chunk_text)
+else:
+    st.caption("Noch keine Chunks gespeichert.")
 
 # ═══════════════════════════════════════════════════════════════
 # Sidebar: Info

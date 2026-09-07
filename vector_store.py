@@ -165,6 +165,15 @@ class PersistentVectorStore:
     def count(self) -> int:
         return self.collection.count()
 
+    def list_chunks(self) -> list[tuple[str, dict]]:
+        """Gibt alle gespeicherten Chunks als (text, metadata) zurück."""
+        if self.collection.count() == 0:
+            return []
+        result = self.collection.get()
+        docs = result.get("documents") or []
+        metas = result.get("metadatas") or [{}] * len(docs)
+        return list(zip(docs, metas))
+
     def clear(self) -> None:
         ids = self.collection.get()["ids"]
         if ids:
