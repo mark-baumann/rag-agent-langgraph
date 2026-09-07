@@ -28,6 +28,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Tesseract OCR + deutsche/englische Sprachdaten — für gescannte PDFs ohne
+# Text-Layer (PyMuPDF `get_textpage_ocr` nutzt Tesseract als Engine).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 

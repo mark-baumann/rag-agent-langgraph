@@ -58,9 +58,10 @@ embedder = get_embedder()
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extrahiert Text aus PDF-Bytes.
 
-    Versucht der Reihe nach PyMuPDF (fitz) und pypdf. Gibt den extrahierten
-    Text zurück oder einen leeren String, wenn nichts extrahiert werden konnte
-    (z. B. gescannte PDFs ohne Text-Layer).
+    Versucht der Reihe nach PyMuPDF (fitz), pypdf und — für gescannte PDFs
+    ohne Text-Layer — OCR via Tesseract (PyMuPDF `get_textpage_ocr`). Gibt den
+    extrahierten Text zurück oder einen leeren String, wenn nichts extrahiert
+    werden konnte.
     """
     # 1) PyMuPDF (fitz) — beste Extraktion, inkl. Layout
     try:
@@ -79,6 +80,24 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         import io
         reader = PdfReader(io.BytesIO(file_bytes))
         text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    # 3) OCR (Tesseract) — für gescannte PDFs ohne Text-Layer
+    try:
+        import fitz
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        pages_text = []
+        for page in doc:
+            # full=True erzwingt OCR der kompletten Seite (auch wenn ein
+            # (leerer) Text-Layer vorhanden ist). deu+eng deckt deutsche und
+            # englische Dokumente ab.
+            tp = page.get_textpage_ocr(language="deu+eng", dpi=200, full=True)
+            pages_text.append(tp.extractText())
+        doc.close()
+        text = "\n".join(pages_text)
         if text.strip():
             return text
     except Exception:
@@ -123,8 +142,9 @@ with col1:
             if not text.strip():
                 st.error(
                     "⚠️ Kein Text aus dieser PDF extrahierbar. "
-                    "Das Dokument ist vermutlich ein Scan ohne Text-Layer "
-                    "(Bild-PDF). Für solche Dateien ist OCR nötig."
+                    "Weder Text-Layer noch OCR (Tesseract) lieferten Text. "
+                    "Das Dokument ist möglicherweise beschädigt oder enthält "
+                    "nur nicht-erkennbare Grafiken."
                 )
             else:
                 with st.spinner("✂️ Erstelle Chunks..."):
