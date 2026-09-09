@@ -16,6 +16,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from pdf_text import chunk_text, extract_text_from_pdf, reindex_poisoned_documents  # noqa: E402
 from vector_store import DEFAULT_PERSIST_DIR, HashEmbedder, PersistentVectorStore  # noqa: E402
 
 EMBED_DIM = 256
@@ -24,7 +25,10 @@ EMBED_DIM = 256
 # Volume abgelegt, damit sie im Browser angezeigt oder heruntergeladen
 # werden können (die Vector-DB enthält nur Text-Chunks, keine Rohdaten).
 DOCS_DIR = Path(DEFAULT_PERSIST_DIR).parent / "documents"
+VOLUME_DOCS_DIR = Path(DEFAULT_PERSIST_DIR) / "documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
+VOLUME_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+DOC_SEARCH_DIRS = [DOCS_DIR, VOLUME_DOCS_DIR]
 
 # ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -38,85 +42,15 @@ st.markdown("PDF hochladen · Embedding · dauerhafte Speicherung · Fragen stel
 
 
 @st.cache_resource
-def get_store() -> PersistentVectorStore:
-    """Öffnet die persistente Vector-DB (ChromaDB, einmal pro Prozess)."""
-    return PersistentVectorStore()
+def bootstrap():
+    """Öffnet die Vector-DB und ersetzt alte PyMuPDF-Fehler-Chunks."""
+    store = PersistentVectorStore()
+    embedder = HashEmbedder(dim=EMBED_DIM)
+    stats = reindex_poisoned_documents(store, embedder, DOC_SEARCH_DIRS)
+    return store, embedder, stats
 
 
-@st.cache_resource
-def get_embedder() -> HashEmbedder:
-    return HashEmbedder(dim=EMBED_DIM)
-
-
-store = get_store()
-embedder = get_embedder()
-
-# ═══════════════════════════════════════════════════════════════
-# Hilfsfunktionen
-# ═══════════════════════════════════════════════════════════════
-
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """Extrahiert Text aus PDF-Bytes.
-
-    Versucht der Reihe nach PyMuPDF (fitz), pypdf und — für gescannte PDFs
-    ohne Text-Layer — OCR via Tesseract (PyMuPDF `get_textpage_ocr`). Gibt den
-    extrahierten Text zurück oder einen leeren String, wenn nichts extrahiert
-    werden konnte.
-    """
-    # 1) PyMuPDF (fitz) — beste Extraktion, inkl. Layout
-    try:
-        import fitz
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        text = "".join(page.get_text() for page in doc)
-        doc.close()
-        if text.strip():
-            return text
-    except Exception:
-        pass
-
-    # 2) pypdf — reiner Text-Layer, ohne Layout
-    try:
-        from pypdf import PdfReader
-        import io
-        reader = PdfReader(io.BytesIO(file_bytes))
-        text = "\n".join((page.extract_text() or "") for page in reader.pages)
-        if text.strip():
-            return text
-    except Exception:
-        pass
-
-    # 3) OCR (Tesseract) — für gescannte PDFs ohne Text-Layer
-    try:
-        import fitz
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        pages_text = []
-        for page in doc:
-            # full=True erzwingt OCR der kompletten Seite (auch wenn ein
-            # (leerer) Text-Layer vorhanden ist). deu+eng deckt deutsche und
-            # englische Dokumente ab.
-            tp = page.get_textpage_ocr(language="deu+eng", dpi=200, full=True)
-            pages_text.append(tp.extractText())
-        doc.close()
-        text = "\n".join(pages_text)
-        if text.strip():
-            return text
-    except Exception:
-        pass
-
-    return ""
-
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
-    """Teilt Text in überlappende Chunks."""
-    words = text.split()
-    chunks = []
-    start = 0
-    while start < len(words):
-        end = min(start + chunk_size, len(words))
-        chunk = " ".join(words[start:end])
-        chunks.append(chunk)
-        start += chunk_size - overlap
-    return chunks
+store, embedder, reindex_stats = bootstrap()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -155,10 +89,10 @@ with col1:
                     metadatas = [{"source": uploaded_file.name} for _ in chunks]
                     store.add(chunks, embeddings, metadatas=metadatas)
 
-                # Original-PDF ebenfalls dauerhaft ablegen, damit sie später
-                # angezeigt oder heruntergeladen werden kann.
                 safe_name = Path(uploaded_file.name).name
-                (DOCS_DIR / safe_name).write_bytes(file_bytes)
+                for docs_dir in DOC_SEARCH_DIRS:
+                    docs_dir.mkdir(parents=True, exist_ok=True)
+                    (docs_dir / safe_name).write_bytes(file_bytes)
 
                 st.success(f"✅ {len(chunks)} Chunks dauerhaft in der Vector-DB gespeichert!")
                 st.metric("Neue Chunks", len(chunks))
@@ -237,7 +171,12 @@ with col2:
 st.divider()
 st.subheader("📁 Gespeicherte Dokumente")
 
-doc_paths = sorted(DOCS_DIR.glob("*.pdf"), key=lambda p: p.name.lower())
+doc_by_name = {}
+for docs_dir in DOC_SEARCH_DIRS:
+    if docs_dir.exists():
+        for path in docs_dir.glob("*.pdf"):
+            doc_by_name[path.name] = path
+doc_paths = sorted(doc_by_name.values(), key=lambda p: p.name.lower())
 
 if doc_paths:
     for doc_path in doc_paths:
@@ -309,11 +248,18 @@ st.sidebar.markdown("""
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 Vector-DB")
 st.sidebar.metric("Dauerhaft gespeicherte Chunks", store.count())
+if reindex_stats.get("reindexed") or reindex_stats.get("deleted_only"):
+    st.sidebar.caption(
+        f"Reindex: {reindex_stats['reindexed']} PDFs neu eingebettet, "
+        f"{reindex_stats['deleted_only']} Fehler-Chunks entfernt."
+    )
 
 if store.count() > 0 and st.sidebar.button("🗑️ Alle gespeicherten Dokumente löschen"):
     store.clear()
-    for doc_path in DOCS_DIR.glob("*.pdf"):
-        doc_path.unlink()
+    for docs_dir in DOC_SEARCH_DIRS:
+        if docs_dir.exists():
+            for doc_path in docs_dir.glob("*.pdf"):
+                doc_path.unlink()
     st.sidebar.success("Vector-DB geleert.")
     st.rerun()
 

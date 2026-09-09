@@ -174,6 +174,13 @@ class PersistentVectorStore:
         metas = result.get("metadatas") or [{}] * len(docs)
         return list(zip(docs, metas))
 
+    def delete_by_source(self, source: str) -> int:
+        result = self.collection.get(where={"source": source})
+        ids = result.get("ids") or []
+        if ids:
+            self.collection.delete(ids=ids)
+        return len(ids)
+
     def clear(self) -> None:
         ids = self.collection.get()["ids"]
         if ids:

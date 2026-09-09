@@ -105,3 +105,17 @@ class TestPersistentVectorStore:
     def test_search_empty_store(self, tmp_path):
         store = PersistentVectorStore(persist_directory=str(tmp_path / "chroma"))
         assert store.search(np.zeros(32)) == []
+
+    def test_delete_by_source(self, tmp_path):
+        store = PersistentVectorStore(persist_directory=str(tmp_path / "chroma"))
+        embedder = HashEmbedder(dim=32)
+        store.add(
+            ["keep", "drop"],
+            [embedder.embed("keep"), embedder.embed("drop")],
+            metadatas=[{"source": "keep.pdf"}, {"source": "drop.pdf"}],
+        )
+        deleted = store.delete_by_source("drop.pdf")
+        assert deleted == 1
+        assert store.count() == 1
+        remaining = [text for text, _ in store.list_chunks()]
+        assert remaining == ["keep"]
