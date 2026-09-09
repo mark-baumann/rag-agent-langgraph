@@ -6,7 +6,6 @@ Retrieval visualisieren. Gespeicherte Dokumente überleben App-Neustarts und
 Redeploys (Vector-DB liegt auf einem persistenten Volume).
 """
 
-import base64
 import re
 import sys
 from pathlib import Path
@@ -180,14 +179,10 @@ doc_paths = sorted(doc_by_name.values(), key=lambda p: p.name.lower())
 
 if doc_paths:
     for doc_path in doc_paths:
-        col_name, col_view, col_download = st.columns([4, 1, 1])
-        view_key = f"show_preview::{doc_path.name}"
+        col_name, col_download = st.columns([4, 1])
 
         with col_name:
             st.write(f"📄 {doc_path.name}")
-        with col_view:
-            if st.button("👁️ Anzeigen", key=f"view_btn::{doc_path.name}"):
-                st.session_state[view_key] = not st.session_state.get(view_key, False)
         with col_download:
             st.download_button(
                 "📥 Download",
@@ -195,14 +190,6 @@ if doc_paths:
                 file_name=doc_path.name,
                 mime="application/pdf",
                 key=f"download_btn::{doc_path.name}",
-            )
-
-        if st.session_state.get(view_key, False):
-            b64_pdf = base64.b64encode(doc_path.read_bytes()).decode()
-            st.markdown(
-                f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
-                f'width="100%" height="600" style="border:none;"></iframe>',
-                unsafe_allow_html=True,
             )
 else:
     st.caption("Noch keine Dokumente gespeichert.")
