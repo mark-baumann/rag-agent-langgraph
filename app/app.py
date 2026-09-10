@@ -15,6 +15,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from answer_generation import generate_answer  # noqa: E402
 from pdf_text import chunk_text, extract_text_from_pdf, reindex_poisoned_documents  # noqa: E402
 from vector_store import DEFAULT_PERSIST_DIR, HashEmbedder, PersistentVectorStore  # noqa: E402
 
@@ -117,7 +118,33 @@ with col2:
                 results = store.search_with_scores(query_emb, k=top_k)
 
             st.divider()
-            st.subheader(f"📊 Top-{len(results)} Ergebnisse")
+
+            # ── Generierte Antwort ────────────────────────────
+            st.subheader("🧠 Antwort")
+            with st.spinner("🧠 Formuliere Antwort..."):
+                answer = generate_answer(query, [r[0] for r in results])
+
+            if answer:
+                st.markdown(answer)
+            else:
+                st.warning(
+                    "⚠️ Es konnte keine Antwort generiert werden — es wurden "
+                    "nur die ähnlichsten Text-Ausschnitte gefunden (unten), "
+                    "aber kein Sprachmodell hat sie zu einer Antwort "
+                    "zusammengefasst. Setze `OPENAI_API_KEY` als Umgebungs-"
+                    "variable im Deployment, damit die App eine echte "
+                    "Antwort formulieren kann, statt nur Rohdaten anzuzeigen."
+                )
+
+            st.divider()
+            st.subheader(f"📊 Top-{len(results)} Ergebnisse (Rohdaten)")
+            st.caption(
+                "Die Ähnlichkeits-Scores kommen aus einem einfachen Hash-"
+                "Embedder (Demo-Zweck) und sind nicht direkt mit Werten "
+                "aus echten Embedding-Modellen vergleichbar — Werte um "
+                "0.3 sind hier normal und heißen nicht automatisch, dass "
+                "kein passender Chunk dabei ist."
+            )
 
             # ── Visualisierung: Ähnlichkeits-Balken ──────────
             import matplotlib.pyplot as plt
