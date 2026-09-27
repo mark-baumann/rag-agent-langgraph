@@ -16,7 +16,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from answer_generation import generate_answer  # noqa: E402
-from pdf_text import chunk_text, extract_text_from_pdf, reindex_poisoned_documents  # noqa: E402
+from pdf_text import OCR_ENGINES, chunk_text, extract_text_from_pdf, reindex_poisoned_documents  # noqa: E402
 from vector_store import DEFAULT_PERSIST_DIR, HashEmbedder, PersistentVectorStore  # noqa: E402
 
 EMBED_DIM = 256
@@ -66,12 +66,23 @@ with col1:
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
 
+        ocr_engine = st.select_slider(
+            "🧠 OCR-Engine",
+            options=list(OCR_ENGINES),
+            value="tesseract",
+            help=(
+                "Tesseract: CPU-OCR für Text-Layer und Scans (Standard). "
+                "DeepSeek-OCR: Vision-Modell mit besserer Handschrift-/Layout-"
+                "Erkennung — braucht GPU + Modellgewichte und fällt sonst auf "
+                "Tesseract zurück."
+            ),
+        )
         chunk_size = st.slider("Chunk-Größe (Wörter)", 100, 1000, 500, 50)
         overlap = st.slider("Überlappung (Wörter)", 0, 300, 100, 25)
 
         if st.button("💾 PDF verarbeiten & dauerhaft speichern", type="primary"):
-            with st.spinner("📄 Extrahiere Text aus PDF..."):
-                text = extract_text_from_pdf(file_bytes)
+            with st.spinner(f"📄 Extrahiere Text aus PDF (OCR: {ocr_engine})..."):
+                text = extract_text_from_pdf(file_bytes, engine=ocr_engine)
 
             if not text.strip():
                 st.error(

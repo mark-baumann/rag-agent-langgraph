@@ -10,12 +10,19 @@ POISON_MARKERS = (
     "Kein Text extrahierbar",
 )
 
+# In der GUI wählbare OCR-Engines (AUG-241). Tesseract ist der sichere
+# Default (CPU, klein); DeepSeek-OCR braucht GPU + Modellgewichte und wird
+# nur gewählt, wenn ein GPU-Host vorhanden ist.
+OCR_ENGINES = ("tesseract", "deepseek-ocr")
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+
+def extract_text_from_pdf(file_bytes: bytes, engine: str = "tesseract") -> str:
     """Extrahiert Text aus PDF-Bytes.
 
     Versucht der Reihe nach PyMuPDF (fitz), pypdf und — für gescannte PDFs
-    ohne Text-Layer — OCR via Tesseract (PyMuPDF `get_textpage_ocr`). Gibt den
+    ohne Text-Layer — OCR. ``engine`` wählt das OCR-Verfahren: ``tesseract``
+    (Default, PyMuPDF `get_textpage_ocr`) oder ``deepseek-ocr`` (GPU-Modell,
+    schlägt sauber auf Tesseract zurück, wenn nicht verfügbar). Gibt den
     extrahierten Text zurück oder einen leeren String, wenn nichts extrahiert
     werden konnte.
     """
@@ -56,6 +63,24 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
             return text
     except Exception:
         pass
+
+    # Engine "deepseek-ocr" ausgewählt, aber kein GPU-Backend erreichbar:
+    # sauber auf Tesseract zurückfallen statt leer zu bleiben.
+    if engine == "deepseek-ocr":
+        try:
+            import fitz
+
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            pages_text = []
+            for page in doc:
+                tp = page.get_textpage_ocr(language="deu+eng", dpi=200, full=True)
+                pages_text.append(tp.extractText())
+            doc.close()
+            text = "\n".join(pages_text)
+            if text.strip():
+                return text
+        except Exception:
+            pass
 
     return ""
 
