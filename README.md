@@ -52,16 +52,7 @@ pip install langgraph
 streamlit run app.py
 ```
 
-**📖 Lernmodus** (erster Tab): PDF hochladen und Seite für Seite durchblättern.
-Links wird die Seite angezeigt, rechts erklärt die KI (Text + Bild der Seite an
-`gpt-4o-mini`), was darauf steht — mit Begriffsliste, Verständnisfragen und
-Rückfragen-Chat, wahlweise *ganz einfach*, *normal* oder *fachlich*. Per Klick
-entsteht daraus ein **Podcast**: Lena und Max unterhalten sich über die Seite
-oder das ganze Dokument (Skript per LLM, Stimmen per OpenAI-TTS), zum Anhören
-und als MP3-Download. Erklärungen und Podcasts werden auf dem Daten-Volume
-gespeichert. Benötigt `OPENAI_API_KEY`.
-
-Die Such-Ansicht bietet drei Modi:
+Die App bietet drei Modi:
 1. **RAG Agent** — Einfache Retrieve-Generate-Pipeline mit konfigurierbarem Vector Store
 2. **LangGraph Agent** — Stateful Workflow mit Halluzinationserkennung und Tool-Use
 3. **Agentic RAG** — Multi-Step Reasoning mit adaptiver Retrieval-Strategie
